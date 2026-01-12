@@ -10,6 +10,7 @@
   --text-muted: #94a3b8;
   --success: #10b981;
   --pending: #f59e0b;
+  --error: #ef4444;
 }
 
 * {
@@ -34,34 +35,62 @@ body {
 }
 
 header {
-  text-align: center;
   margin-bottom: 3rem;
   animation: fadeInDown 0.8s ease-out;
 }
 
+.header-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
 h1 {
-  font-size: 3rem;
+  font-size: 2.5rem;
   font-weight: 700;
   background: linear-gradient(to right, #818cf8, #c084fc);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
-  margin-bottom: 0.5rem;
+}
+
+.connection-pill-container {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.5rem;
 }
 
 .connection-pill {
-  display: inline-block;
   padding: 0.5rem 1rem;
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);
   border-radius: 9999px;
   backdrop-filter: blur(8px);
-  font-size: 0.875rem;
+  font-size: 0.8rem;
   color: var(--text-muted);
 }
 
 .connection-pill.active {
   color: var(--primary);
   border-color: var(--primary);
+}
+
+.switch-network-btn {
+  background: var(--pending);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 0.3rem 0.6rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+  width: auto;
+  transition: all 0.2s;
+}
+
+.switch-network-btn:hover {
+  transform: translateY(-1px);
+  opacity: 0.9;
 }
 
 main {
@@ -83,12 +112,21 @@ section {
   padding: 2rem;
   border-radius: 24px;
   box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  display: flex;
+  flex-direction: column;
 }
 
 h2 {
-  margin-bottom: 1.5rem;
+  margin-bottom: 1rem;
   font-size: 1.5rem;
   font-weight: 600;
+}
+
+.role-info {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-bottom: 1.5rem;
+  font-style: italic;
 }
 
 .input-group {
@@ -119,7 +157,7 @@ input:focus {
   box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
 }
 
-button {
+.action-button {
   width: 100%;
   padding: 1rem;
   background: var(--primary);
@@ -130,62 +168,94 @@ button {
   cursor: pointer;
   transition: all 0.3s ease;
   font-family: inherit;
+  margin-top: 1rem;
 }
 
-button:hover {
+.action-button:disabled {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.action-button:hover:not(:disabled) {
   background: var(--primary-hover);
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
 }
 
-.escrow-card {
+/* Token Info Card */
+.token-details-card {
   background: rgba(255, 255, 255, 0.03);
   border-radius: 16px;
   padding: 1.5rem;
-  margin-bottom: 1.5rem;
+  margin-top: 1rem;
   border: 1px solid var(--glass-border);
-  transition: transform 0.3s ease;
 }
 
-.escrow-card:hover {
-  transform: scale(1.02);
-}
-
-.escrow-card p {
-  margin-bottom: 0.5rem;
+.detail-item {
   font-size: 0.9rem;
+  margin-bottom: 0.3rem;
 }
 
-.escrow-card strong {
+.detail-item strong {
   color: var(--text-muted);
   font-weight: 400;
   margin-right: 0.5rem;
 }
 
-.status-badge {
-  display: inline-block;
-  padding: 0.25rem 0.75rem;
-  border-radius: 8px;
+.balance-display {
+  margin-top: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  padding-top: 1rem;
+  border-top: 1px solid var(--glass-border);
+}
+
+.balance-label {
   font-size: 0.75rem;
-  font-weight: 600;
   text-transform: uppercase;
-}
-
-.status-badge.pending {
-  background: rgba(245, 158, 11, 0.1);
-  color: var(--pending);
-}
-
-.status-badge.approved {
-  background: rgba(16, 185, 129, 0.1);
-  color: var(--success);
-}
-
-.role-info {
-  font-size: 0.75rem;
   color: var(--text-muted);
-  margin-bottom: 1rem;
-  font-style: italic;
+  letter-spacing: 0.05em;
+}
+
+.balance-amount {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.status-message {
+  padding: 1rem;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  margin-top: 1rem;
+}
+
+.status-message.error {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--error);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.metamask-guide {
+  margin-top: auto;
+  padding-top: 2rem;
+  border-top: 1px solid var(--glass-border);
+}
+
+.metamask-guide h3 {
+  font-size: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.metamask-guide ol {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  padding-left: 1.2rem;
+}
+
+.metamask-guide li {
+  margin-bottom: 0.3rem;
 }
 
 @keyframes fadeInDown {

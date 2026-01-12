@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import './App.css';
 
-import EscrowABI from './Escrow.json';
+import RahmanCoinABI from './RahmanCoin.json';
 
 function App() {
   // STATE
@@ -11,13 +11,15 @@ function App() {
   const [account, setAccount] = useState('');
   const [networkName, setNetworkName] = useState('');
   
-  // FORM INPUTS
-  const [arbiter, setArbiter] = useState('');
-  const [beneficiary, setBeneficiary] = useState('');
-  const [amount, setAmount] = useState('');
+  // TOKEN STATE
+  const [tokenAddress, setTokenAddress] = useState('');
+  const [tokenInfo, setTokenInfo] = useState({ name: '', symbol: '', totalSupply: '' });
+  const [balance, setBalance] = useState('0');
   
-  // DEPLOYED ESCROWS
-  const [escrows, setEscrows] = useState([]);
+  // FORM INPUTS
+  const [recipient, setRecipient] = useState('');
+  const [amount, setAmount] = useState('');
+  const [loading, setLoading] = useState(false);
   
   // CONNECT WALLET ON LOAD
   useEffect(() => {
@@ -31,6 +33,8 @@ function App() {
           setAccount('');
           setSigner(null);
           setNetworkName('');
+          setBalance('0');
+          setLoading(false);
         }
       });
 
@@ -47,6 +51,34 @@ function App() {
     };
   }, []);
   
+  async function requestNetworkSwitch() {
+    if (window.ethereum) {
+      try {
+        await window.ethereum.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: '0xaa36a7' }], // Sepolia: 11155111
+        });
+      } catch (switchError) {
+        if (switchError.code === 4902) {
+          try {
+            await window.ethereum.request({
+              method: 'wallet_addEthereumChain',
+              params: [{
+                chainId: '0xaa36a7',
+                chainName: 'Sepolia Test Network',
+                rpcUrls: ['https://rpc.sepolia.org'],
+                nativeCurrency: { name: 'Sepolia ETH', symbol: 'SEP', decimals: 18 },
+                blockExplorerUrls: ['https://sepolia.etherscan.io'],
+              }],
+            });
+          } catch (addError) {
+            console.error("Failed to add network:", addError);
+          }
+        }
+      }
+    }
+  }
+
   async function connectWallet() {
     if (window.ethereum) {
       const browserProvider = new ethers.BrowserProvider(window.ethereum);
@@ -61,157 +93,180 @@ function App() {
         const network = await browserProvider.getNetwork();
         let name = network.name;
         if (network.chainId === 11155111n) name = "Sepolia";
-        if (network.chainId === 31337n) name = "Hardhat Local";
+        else if (network.chainId === 31337n) name = "Hardhat Local";
         setNetworkName(name.charAt(0).toUpperCase() + name.slice(1));
       }
     } else {
       alert("Please install MetaMask!");
     }
   }
-  
-  async function deployEscrow() {
-    const cleanArbiter = arbiter.trim();
-    const cleanBeneficiary = beneficiary.trim();
 
-    if (!cleanArbiter || !cleanBeneficiary || !amount) {
-      alert("Fill all fields!");
+  // Load token data if address is provided
+  async function loadTokenData() {
+    console.log("Attempting to load token data for:", tokenAddress);
+    if (!signer || !tokenAddress || !ethers.isAddress(tokenAddress)) {
+      setTokenInfo({ name: '', symbol: '', totalSupply: '' });
+      setBalance('0');
       return;
     }
 
-    if (!ethers.isAddress(cleanArbiter) || !ethers.isAddress(cleanBeneficiary)) {
-      alert("Please enter valid Ethereum addresses (starting with 0x)");
-      return;
-    }
-    
     try {
-      const factory = new ethers.ContractFactory(
-        EscrowABI.abi,
-        EscrowABI.bytecode,
-        signer
-      );
-      
-      const escrow = await factory.deploy(cleanArbiter, cleanBeneficiary, {
-        value: ethers.parseEther(amount)
+      const token = new ethers.Contract(tokenAddress, RahmanCoinABI.abi, signer);
+      const name = await token.name();
+      const symbol = await token.symbol();
+      const totalSupply = await token.totalSupply();
+      const userBalance = await token.balanceOf(account);
+
+      setTokenInfo({
+        name,
+        symbol,
+        totalSupply: ethers.formatUnits(totalSupply, 18)
       });
-      
-      await escrow.waitForDeployment();
-      const address = await escrow.getAddress();
-      
-      setEscrows([...escrows, {
-        address,
-        arbiter: cleanArbiter,
-        beneficiary: cleanBeneficiary,
-        amount,
-        approved: false
-      }]);
-      
-      setArbiter('');
-      setBeneficiary('');
-      setAmount('');
-      
+      setBalance(ethers.formatUnits(userBalance, 18));
+      console.log("Token data loaded successfully");
     } catch (error) {
-      console.error("Deployment failed:", error);
-      alert("Deployment failed! Check the console for details.");
+      console.error("Error loading token data:", error);
+      setTokenInfo({ name: '', symbol: '', totalSupply: '' });
+      setBalance('0');
+      if (networkName !== 'Sepolia') {
+        alert("Failed to load token. You are on " + networkName + " but the token is likely on Sepolia. Click 'Switch to Sepolia' at the top!");
+      } else {
+        alert("Failed to load token. Please double check the contract address.");
+      }
     }
   }
 
-  async function approveEscrow(escrowAddress, index) {
+  useEffect(() => {
+    if (signer && tokenAddress && ethers.isAddress(tokenAddress)) {
+      loadTokenData();
+    }
+  }, [signer, tokenAddress, account, networkName]);
+
+  async function transferTokens() {
+    console.log("Transfer initiating...", { recipient, amount });
+    if (!signer || !tokenAddress || !recipient || !amount) {
+      alert("Please fill all fields!");
+      return;
+    }
+
+    if (!ethers.isAddress(recipient)) {
+      alert("Invalid recipient address!");
+      return;
+    }
+
+    setLoading(true);
     try {
-      const escrow = new ethers.Contract(escrowAddress, EscrowABI.abi, signer);
-      const tx = await escrow.approve();
+      const token = new ethers.Contract(tokenAddress, RahmanCoinABI.abi, signer);
+      const tx = await token.transfer(recipient, ethers.parseUnits(amount, 18));
+      
+      console.log("Transaction sent:", tx.hash);
       await tx.wait();
+      alert("✅ Transfer complete!");
       
-      const updated = [...escrows];
-      updated[index].approved = true;
-      setEscrows(updated);
-      
+      loadTokenData();
+      setAmount('');
+      setRecipient('');
     } catch (error) {
-      console.error("Approval failed:", error);
-      alert("Only the designated arbiter can approve this release!");
+      console.error("Transfer failed:", error);
+      alert("Transfer failed! Check if you have enough balance and are on the Sepolia network.");
+    } finally {
+      setLoading(false);
     }
   }
   
   return (
     <div className="App">
       <header>
-        <h1>Secure Escrow</h1>
-        <div className={`connection-pill ${account ? 'active' : ''}`}>
-          {account 
-            ? `${networkName}: ${account.slice(0, 6)}...${account.slice(-4)}` 
-            : "Not Connected"}
+        <div className="header-top">
+          <h1>Rahman Coin Dash</h1>
+          <div className="connection-pill-container">
+            <div className={`connection-pill ${account ? 'active' : ''}`}>
+              {account 
+                ? `${networkName}: ${account.slice(0, 6)}...${account.slice(-4)}` 
+                : "Not Connected"}
+            </div>
+            {account && networkName !== 'Sepolia' && (
+              <button onClick={requestNetworkSwitch} className="switch-network-btn">
+                Switch to Sepolia
+              </button>
+            )}
+          </div>
         </div>
       </header>
       
       <main>
         <section className="deploy-section">
-          <h2>New Deposit</h2>
-          <p className="role-info">As the Depositor, you lock ETH until the Arbiter approves its release to the Beneficiary.</p>
+          <h2>Token Lookup</h2>
+          <p className="role-info">Enter your Rahman Coin address (from deployment) to see your balance.</p>
           
           <div className="input-group">
-            <label>Arbiter Address</label>
+            <label>Token Contract Address</label>
             <input
               type="text"
               placeholder="0x..."
-              value={arbiter}
-              onChange={(e) => setArbiter(e.target.value)}
+              value={tokenAddress}
+              onChange={(e) => setTokenAddress(e.target.value)}
+            />
+          </div>
+
+          {tokenInfo.name ? (
+            <div className="token-details-card">
+              <div className="detail-item"><strong>Name:</strong> {tokenInfo.name}</div>
+              <div className="detail-item"><strong>Symbol:</strong> {tokenInfo.symbol}</div>
+              <div className="detail-item"><strong>Total Supply:</strong> {tokenInfo.totalSupply}</div>
+              <div className="balance-display">
+                <span className="balance-label">Your Balance</span>
+                <span className="balance-amount">{balance} {tokenInfo.symbol}</span>
+              </div>
+            </div>
+          ) : tokenAddress && ethers.isAddress(tokenAddress) && (
+            <div className="status-message error">
+              Cannot find token on {networkName}. Click "Switch to Sepolia" above!
+            </div>
+          )}
+        </section>
+        
+        <section className="escrows-section">
+          <h2>Send Tokens</h2>
+          <p className="role-info">Send {tokenInfo.symbol || 'tokens'} to a friend on the network.</p>
+          
+          <div className="input-group">
+            <label>Recipient Address</label>
+            <input
+              type="text"
+              placeholder="0x..."
+              value={recipient}
+              onChange={(e) => setRecipient(e.target.value)}
             />
           </div>
           
           <div className="input-group">
-            <label>Beneficiary Address</label>
+            <label>Amount</label>
             <input
               type="text"
-              placeholder="0x..."
-              value={beneficiary}
-              onChange={(e) => setBeneficiary(e.target.value)}
-            />
-          </div>
-          
-          <div className="input-group">
-            <label>Amount (ETH)</label>
-            <input
-              type="text"
-              placeholder="1.0"
+              placeholder="0.0"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
             />
           </div>
           
-          <button onClick={deployEscrow}>Create Escrow</button>
-        </section>
-        
-        <section className="escrows-section">
-          <h2>Active Escrows</h2>
-          
-          {escrows.length === 0 && (
-            <div style={{ textAlign: 'center', color: 'var(--text-muted)', marginTop: '2rem' }}>
-              No deposits found. Start one to see it here.
-            </div>
-          )}
-          
-          {escrows.map((escrow, index) => (
-            <div key={index} className="escrow-card">
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
-                <span className={`status-badge ${escrow.approved ? 'approved' : 'pending'}`}>
-                  {escrow.approved ? "Released" : "Vaulted"}
-                </span>
-                <span style={{ fontWeight: '700', color: 'var(--primary)' }}>{escrow.amount} ETH</span>
-              </div>
-              
-              <p><strong>Arbiter</strong> {escrow.arbiter.slice(0, 10)}...</p>
-              <p><strong>Beneficiary</strong> {escrow.beneficiary.slice(0, 10)}...</p>
-              <p style={{ fontSize: '0.75rem', marginTop: '1rem', opacity: 0.6 }}>Contract: {escrow.address}</p>
-              
-              {!escrow.approved && (
-                <button 
-                  onClick={() => approveEscrow(escrow.address, index)}
-                  style={{ marginTop: '1rem', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)' }}
-                >
-                  Approve Release
-                </button>
-              )}
-            </div>
-          ))}
+          <button 
+            onClick={transferTokens} 
+            disabled={!tokenInfo.name || loading}
+            className="action-button"
+          >
+            {loading ? "Transmitting..." : `Transfer ${tokenInfo.symbol || 'Tokens'}`}
+          </button>
+
+          <div className="metamask-guide">
+            <h3>Add to MetaMask Guide</h3>
+            <ol>
+              <li>Ensure MetaMask is on <strong>Sepolia</strong></li>
+              <li>In MetaMask, click <strong>"Import tokens"</strong></li>
+              <li>Paste: <code style={{wordBreak: 'break-all'}}>{tokenAddress || 'Token Address'}</code></li>
+              <li>It should auto-fill RHM and 18 decimals!</li>
+            </ol>
+          </div>
         </section>
       </main>
     </div>
